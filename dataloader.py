@@ -2,6 +2,8 @@
 import pandas as pd
 import os
 from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+import numpy as np
 
 class dataloader:
     def __init__(self,datapath):
@@ -13,8 +15,10 @@ class dataloader:
         genre_df = movies_df['genres'].str.get_dummies(sep='|')
         movies_df = pd.concat([movies_df, genre_df], axis=1)
         movies_df.drop("genres", inplace=True, axis=1)
-        # movies_df['year'] = movies_df["title"].str.extract('(\(\d{4}\))')
-        # movies_df['year'] = movies_df['year'].apply(lambda x: str(x).replace('(', '').replace(')', ""))
+        movies_df['year'] = movies_df["title"].str.extract('(\(\d\d\d\d\))') #(\(\d{4}\))
+        print(movies_df['year'].isna().sum())
+        movies_df.dropna(axis=0,inplace=True)
+        movies_df['year'] = movies_df['year'].apply(lambda x: str(x).replace('(', '').replace(')', ""))
         movies_df.drop('title', axis=1, inplace=True)
         movies_df = movies_df.reset_index()
 
@@ -24,10 +28,11 @@ class dataloader:
         item_onehot = pd.get_dummies(feature_vector['movieId'], prefix='movie')
 
         concat_feature_vector = pd.concat([feature_vector, user_onehot, item_onehot], axis=1).drop("userId",axis=1).drop( "movieId", axis=1)
-        # concat_feature_vector['year'] = concat_feature_vector['year'].astype('float32')
+        concat_feature_vector = concat_feature_vector.astype('float32')
 
         target_rating = concat_feature_vector["rating"]
         concat_feature_vector.drop('rating', axis=1, inplace=True)
+
 
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(concat_feature_vector, target_rating, test_size=0.1)
 

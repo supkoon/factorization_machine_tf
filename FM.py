@@ -24,7 +24,7 @@ class FM(keras.Model):
         degree_2 = 0.5 * tf.reduce_sum(
 
             tf.math.pow(tf.matmul(inputs,self.v),2)
-            -tf.matmul(tf.math.pow(self.inputs,2),tf.math.pow(self.v,2)),
+            -tf.matmul(tf.math.pow(inputs,2),tf.math.pow(self.v,2)),
         axis=1,
         keepdims=False
         )
@@ -56,7 +56,6 @@ def train(epochs):
     X_test,Y_test = loader.generate_testset()
     train_ds = tf.data.Dataset.from_tensor_slices(
         (tf.cast(X_train, tf.float32), tf.cast(Y_train, tf.float32))).shuffle(500).batch(8)
-
     test_ds = tf.data.Dataset.from_tensor_slices(
         (tf.cast(X_test, tf.float32), tf.cast(Y_test, tf.float32))).shuffle(200).batch(8)
     num_factors = 8
