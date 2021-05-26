@@ -82,4 +82,3 @@ def train(epochs):
 
     print("테스트 정확도: {:.4f}".format(test_accuracy.result().numpy()))
 
-train(10)
