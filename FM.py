@@ -1,84 +1,122 @@
-import numpy as np
-import pandas as pd
+
 import tensorflow as tf
+import argparse
 from tensorflow import keras
-from sklearn.preprocessing import MinMaxScaler
 from dataloader import dataloader
 
-
+def parse_args():
+    parser = argparse.ArgumentParser(description="NeuralMF.")
+    parser.add_argument('--path', nargs='?', default='/dataset/',
+                        help='Input data path.')
+    parser.add_argument('--dataset', nargs='?', default='ratings.csv',
+                        help='Choose a dataset.')
+    parser.add_argument('--num_factors', type=int, default=8,help='latent feature of FM model.')
+    parser.add_argument('--epochs', type=int, default=10,help='Number of epochs.')
+    parser.add_argument('--batch_size', type=int, default=32,help='Batch size.')
+    parser.add_argument('--lr', type=float, default=0.01,
+                        help='Learning rate.')
+    parser.add_argument('--learner', nargs='?', default='adam',
+                        help='Specify an optimizer: adagrad, adam, rmsprop, sgd')
+    return parser.parse_args()
 
 
 class FM(keras.Model):
-
-    def __init__(self,num_factor,num_features,**kwargs):
+    def __init__(self, n_factor=8, **kwargs):
         super().__init__(**kwargs)
-        self.num_features = num_features
-        self.num_factor = num_factor
-        self.w_0 = tf.Variable([0.0])
-        self.w = tf.Variable(tf.zeros([self.num_features]))
-        self.v = tf.Variable(tf.random.normal(shape = (self.num_features,self.num_factor)))
 
+        self.w_0 = tf.Variable([0.0])
+        self.w = tf.Variable(tf.zeros(shape=[p]))
+        self.v = tf.Variable(tf.random.normal(shape=(p, n_factor)))
 
     def call(self,inputs):
-        degree_1 = tf.reduce_sum(tf.math.multiply(self.w, inputs),axis=1)
+        degree_1 = tf.reduce_sum(tf.multiply(self.w, inputs), axis=1)
+
         degree_2 = 0.5 * tf.reduce_sum(
-
-            tf.math.pow(tf.matmul(inputs,self.v),2)
-            -tf.matmul(tf.math.pow(inputs,2),tf.math.pow(self.v,2)),
-        axis=1,
-        keepdims=False
+            tf.math.pow(tf.matmul(inputs, self.v), 2)
+            - tf.matmul(tf.math.pow(inputs, 2), tf.math.pow(self.v, 2))
+            , 1
+            , keepdims=False
         )
-        y_hat = tf.math.sigmoid(self.w_0 + degree_1 + degree_2)
 
-        return y_hat
+        predict = tf.math.sigmoid(self.w_0 + degree_1 + degree_2)
 
-def train_on_batch(model, optimizer, accuracy, inputs, targets):
-    with tf.GradientTape() as tape:
-        y_pred = model(inputs)
-        loss = tf.keras.losses.MSE(                y_true=targets,
-                                                   y_pred=y_pred)
+        return predict
 
-    # loss를 모델의 파라미터로 편미분하여 gradients를 구한다.
-    grads = tape.gradient(target=loss, sources=model.trainable_variables)
+def print_status_bar(iteration, total, loss, metrics = None):
+    metrics = " - ".join([f"{m.name}: {m.result():.4f}"
+                          for m in [loss] + (metrics or [])])
+    end = "" if iteration < total else "\n"
+    print(f"\r{iteration}/{total}  " + metrics ,
+          end = end)
 
-    # apply_gradients()를 통해 processed gradients를 적용한다.
-    optimizer.apply_gradients(zip(grads, model.trainable_variables))
+if __name__ == "__main__":
 
-    # accuracy: update할 때마다 정확도는 누적되어 계산된다.
-    accuracy.update_state(targets, y_pred)
+    args = parse_args()
+    num_factors = args.num_factors
+    learner = args.learner
+    learning_rate = args.lr
+    epochs = args.epochs
+    batch_size = args.batch_size
 
-    return loss
 
-# 반복 학습 함수
-def train(epochs):
-    loader=dataloader("datasets/movielens")
-    X_train,Y_train = loader.generate_trainset()
-    X_test,Y_test = loader.generate_testset()
-    train_ds = tf.data.Dataset.from_tensor_slices(
-        (tf.cast(X_train, tf.float32), tf.cast(Y_train, tf.float32))).shuffle(500).batch(8)
-    test_ds = tf.data.Dataset.from_tensor_slices(
-        (tf.cast(X_test, tf.float32), tf.cast(Y_test, tf.float32))).shuffle(200).batch(8)
-    num_factors = 8
-    num_features = X_train.shape[1]
+    loader =dataloader(args.path + args.dataset)
+    X_train =loader.X_train
+    y_train = loader.y_train
+    X_test = loader.X_test
+    y_test = loader.y_test
 
-    model = FM(num_factors,num_features)
-    optimizer = tf.keras.optimizers.SGD(learning_rate=0.01)
-    accuracy = keras.metrics.BinaryAccuracy(threshold=0.5)
-    loss_history = []
 
-    for i in range(epochs):
-        for x, y in train_ds:
-            loss = train_on_batch(model, optimizer, accuracy, x, y)
-            loss_history.append(loss)
+    n = X_train.shape[0]
+    p = X_train.shape[1]
 
-        if i % 2 == 0:
-            print("스텝 {:03d}에서 누적 평균 손실: {:.4f}".format(i, np.mean(loss_history)))
-            print("스텝 {:03d}에서 누적 정확도: {:.4f}".format(i, accuracy.result().numpy()))
 
-    test_accuracy = keras.metrics.BinaryAccuracy(threshold=0.5)
-    for x, y in test_ds:
-        y_pred = model(x)
-        test_accuracy.update_state(y, y_pred)
+    n_steps = len(X_train) // batch_size
 
-    print("테스트 정확도: {:.4f}".format(test_accuracy.result().numpy()))
+    if learner.lower() == "adagrad":
+        optimizer=keras.optimizers.Adagrad(lr=learning_rate)
+    elif learner.lower() == "rmsprop":
+        optimizer=keras.optimizers.RMSprop(lr=learning_rate)
+    elif learner.lower() == "adam":
+        optimizer=keras.optimizers.Adam(lr=learning_rate)
+    else:
+        optimizer = keras.optimizers.SGD(lr=learning_rate)
+
+    loss_fn = keras.losses.binary_crossentropy
+    mean_loss = keras.metrics.Mean()
+    metrics = [keras.metrics.BinaryAccuracy()]
+    test_acc = keras.metrics.BinaryAccuracy()
+
+    model = FM(n_factor=num_factors)
+
+    train_data = tf.data.Dataset.from_tensor_slices(
+        (tf.cast(X_train, tf.float32), tf.cast(y_train, tf.float32))).shuffle(500).batch(batch_size)
+    test_data = tf.data.Dataset.from_tensor_slices(
+        (tf.cast(X_test, tf.float32), tf.cast(y_test, tf.float32))).shuffle(200).batch(batch_size)
+
+    for epoch in range(epochs):
+        print(f"에포크 : {epoch}/{epochs}")
+
+        for step, (X_batch, y_batch) in enumerate(train_data):
+            # train, test data
+            with tf.GradientTape() as tape:
+                predict = model(X_batch)
+                loss = loss_fn(y_batch, predict)
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+            mean_loss(loss)
+
+            for metric in metrics:
+                metric(y_batch, predict)
+
+            print_status_bar(step * batch_size, len(y_train), mean_loss, metrics=metrics)
+
+        for x_test, y_test in test_data:
+            prediction = model(x_test)
+            test_acc.update_state(y_test, prediction)
+
+        print_status_bar(n_steps * batch_size, n_steps * batch_size, mean_loss, metrics=metrics)
+        print("검증 정확도: ", test_acc.result().numpy())
+        for metric in [mean_loss] + [test_acc] +metrics:
+            metric.reset_states()
 

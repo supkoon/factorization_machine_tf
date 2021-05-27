@@ -2,7 +2,6 @@
 import pandas as pd
 import os
 from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
 import numpy as np
 
 class dataloader:
@@ -11,44 +10,43 @@ class dataloader:
         ratings_df = pd.read_csv(os.path.join(self.datapath,"ratings.csv"),encoding='utf-8')
         ratings_df.drop('timestamp', inplace=True, axis=1)
 
-        movies_df = pd.read_csv(os.path.join(self.datapath, "movies.csv"), encoding='utf-8', index_col='movieId')
-        genre_df = movies_df['genres'].str.get_dummies(sep='|')
-        movies_df = pd.concat([movies_df, genre_df], axis=1)
-        movies_df.drop("genres", inplace=True, axis=1)
-
-        movies_df['year'] = movies_df["title"].str.extract('(\(\d\d\d\d\))') #(\(\d{4}\))
-        print(movies_df['year'].isna().sum())
-        movies_df.dropna(axis=0,inplace=True)
-
-        movies_df['year'] = movies_df["title"].str.extract('(\(\d{4}\))')
-
-        movies_df['year'] = movies_df['year'].apply(lambda x: str(x).replace('(', '').replace(')', ""))
-        movies_df.drop('title', axis=1, inplace=True)
-        movies_df = movies_df.reset_index()
-
-        feature_vector = pd.merge(ratings_df, movies_df, how="inner", on="movieId")
-
-        user_onehot = pd.get_dummies(feature_vector['userId'], prefix='user')
-        item_onehot = pd.get_dummies(feature_vector['movieId'], prefix='movie')
-
-        concat_feature_vector = pd.concat([feature_vector, user_onehot, item_onehot], axis=1).drop("userId",axis=1).drop( "movieId", axis=1)
-
-        concat_feature_vector = concat_feature_vector.astype('float32')
-
-        concat_feature_vector['year'] = concat_feature_vector['year'].astype('float32')
-
-        target_rating = concat_feature_vector["rating"]
-        concat_feature_vector.drop('rating', axis=1, inplace=True)
+        movies_df = pd.read_csv(os.path.join(self.datapath, "movies.csv"), encoding='utf-8')
+        movies_df = movies_df.set_index("movieId")
+        dummy_genre_df =  movies_df['genres'].str.get_dummies(sep='|')
 
 
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(concat_feature_vector, target_rating, test_size=0.1)
+        movies_df['year'] = movies_df["title"].str.extract('(\(\d\d\d\d\))')
+        movies_df['year'] = movies_df['year'].astype('str')
+        movies_df['year'] = movies_df['year'].map(lambda x: x.replace("(", "").replace(")", ""))
+        movies_df['year'] = movies_df['year'].astype("float32").astype("int32")
+        movies_df.drop(movies_df[movies_df['year'] == 0].index, inplace=True, axis=0)
+        movies_df.drop('title',axis=1,inplace=True)
+        bins = list(range(1900, 2021, 20))
+        labels = [x for x in range(len(bins) - 1)]
+        movies_df['year_level'] = pd.cut(movies_df['year'], bins, right=False, labels=labels)
+        movies_df.drop('year', inplace=True, axis=1)
 
-    def generate_trainset(self):
-        return self.X_train,self.y_train
 
-    def generate_testset(self):
-        return self.X_test,self.y_test
+        threshold = 10
+        over_threshold = ratings_df.groupby('movieId').size() >= threshold
+        ratings_df['over_threshold'] = ratings_df['movieId'].map(lambda x: over_threshold[x])
+        ratings_df = ratings_df[ratings_df["over_threshold"] == True]
+        ratings_df.drop("over_threshold", axis=1, inplace=True)
 
+        random_idx = np.random.permutation(len(ratings_df))
+        shuffled_df = ratings_df.iloc[random_idx]
+
+        concat_df = pd.concat([
+            pd.get_dummies(shuffled_df['userId'], prefix="user"),
+            pd.get_dummies(shuffled_df['movieId'], prefix="movie"),
+            shuffled_df['movieId'].apply(lambda x: dummy_genre_df.loc[x]),
+            shuffled_df['movieId'].apply(lambda x: movies_df.loc[x]["year_level"]).rename('year_level'),
+        ], axis=1)
+
+        target_df = ratings_df.loc[concat_df.index]['rating']
+        target_df = target_df.apply(lambda x: 1 if x >= 4 else 0)
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(concat_df, target_df, test_size=0.1)
 
 if __name__ == "__main__":
     print(print("---dataloader---"))
