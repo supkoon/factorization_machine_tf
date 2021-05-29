@@ -11,7 +11,7 @@ S. Rendle, "Factorization Machines," 2010 IEEE International Conference on Data 
 
 ## --files
 + dataset : Movielens
-+ predict ratings 0 ~ 3.5 == > class "0".    4.0~5.0 ==> class "1"
++ predict sentiments 0 ~ 3.5 == > class "0".    4.0~5.0 ==> class "1"
 
 
 ## example : FM
