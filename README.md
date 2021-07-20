@@ -1,7 +1,7 @@
 
 # factorization_machine_tf
 
-# Neural Collaborative Filtering with tensorflow 2
+# factorization_machine with tensorflow 2
 
 
 ## --reference paper
